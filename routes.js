@@ -1,15 +1,16 @@
 import fs from 'fs';
+import { sequelize, createProduct, findAllProducts, findProductById, updateProduct, deleteProduct } from './models.js'
 
-export default function routes(req, res, data) {
-    res.setHeader('Content-Type', 'application/json', 'utf-8');
+export default async function routes(req, res, data) {
+    res.setHeader('price-Type', 'application/json', 'utf-8');
 
     if (req.method === 'GET' && req.url === '/') {
-        const { content } = data;
+        const { price } = data;
 
         res.statusCode = 200;
 
         const response = {
-            message: content
+            message: price
         };
 
         res.end(JSON.stringify(response));
@@ -17,19 +18,19 @@ export default function routes(req, res, data) {
         return;
     }
 
-    if (req.method === 'PUT' && req.url === '/files') {
+    if (req.method === 'POST' && req.url === '/products') {
         const body = [];
 
         req.on('data', (chunk) => {
             body.push(chunk);
         });
 
-        req.on('end', () => {
-            const file = JSON.parse(body);
+        req.on('end', async() => {
+            const product = JSON.parse(body);
 
             res.statusCode = 400;
 
-            if (!file?.name) {
+            if (!product?.name) {
                 const response = {
                     error: {
                         message: `No name found, please provide the name for creation.`,
@@ -40,34 +41,40 @@ export default function routes(req, res, data) {
                 return;
             }
 
-            fs.writeFile(`${file.name}.txt`, file?.content ?? '', 'utf-8', (err) => {
-                if (err) {
-                    console.log('Error creating file ', err);
+            if (!product?.price) {
+                const response = {
+                    error: {
+                        message: `No price found, please provide the price for creation.`,
+                    }
+                };
+                res.end(JSON.stringify(response));
 
-                    res.statusCode = 500;
+                return;
+            }
 
-                    const response = {
-                        error: {
-                            message: `Error creating file ${file.name}`
-                        }
-                    };
-
-                    res.end(JSON.stringify(response));
-
-                    return;
-                }
+            try {
+                const response = await createProduct(product);
 
                 res.statusCode = 201;
 
+                res.end(JSON.stringify(response));
+
+                //return;
+            } catch (error) {
+                console.log('Error creating product ', error);
+
+                res.statusCode = 500;
+
                 const response = {
-                    message: `File ${file.name} was created successfully`
+                    error: {
+                        message: `Error creating product ${product.name}`
+                    }
                 };
 
                 res.end(JSON.stringify(response));
 
-                return;
-            });
-            return;
+                //return;
+            }
         });
 
         req.on('error', (err) => {
@@ -83,27 +90,27 @@ export default function routes(req, res, data) {
 
             res.end(JSON.stringify(response));
 
-            return;
+            //return;
         });
         return;
-    };
+    }
 
-    if (req.method === 'PATCH' && req.url === '/files') {
+    if (req.method === 'PATCH' && req.url.split('/')[1] === 'products' && !isNaN(req.url.split('/')[2])) {
         const body = [];
 
         req.on('data', (chunk) => {
             body.push(chunk);
         });
 
-        req.on('end', () => {
-            const file = JSON.parse(body);
+        req.on('end', async() => {
+            const product = JSON.parse(body);
 
             res.statusCode = 400;
 
-            if (!file?.name) {
+            if (!product?.name && !product?.price) {
                 const response = {
                     error: {
-                        message: `No name found, please provide the name for update.`,
+                        message: `No attribute found, please provide an attribute for update.`,
                     }
                 };
                 res.end(JSON.stringify(response));
@@ -111,63 +118,36 @@ export default function routes(req, res, data) {
                 return;
             }
 
-            if (!file?.content) {
-                const response = {
-                    error: {
-                        message: `No content found, please update the content.`,
-                    }
-                };
-                res.end(JSON.stringify(response));
+            const id = req.url.split('/')[2];
 
-                return;
-            }
+            try {
+                const response = await updateProduct(id, product);
 
-            fs.access(`${file.name}.txt`, fs.constants.W_OK, (err) => {
-                if (err) {
-                    console.log('Error accessing file ', err);
+                res.statusCode = 200;
 
-                    res.statusCode = err.code === 'ENOENT' ? 404 : 403;
-
-                    const response = {
-                        error: {
-                            message: `Error accessing file ${file.name}`
-                        }
-                    };
-
-                    res.end(JSON.stringify(response));
-
-                    return;
+                if(!response) {
+                    res.statusCode = 404;
                 }
 
-                fs.appendFile(`${file.name}.txt`, `\n${file.content}`, 'utf-8', (err) => {
-                    if (err) {
-                        console.log('Error updating file ', err);
+                res.end(JSON.stringify(response));
 
-                        res.statusCode = 500;
+                //return;
 
-                        const response = {
-                            error: {
-                                message: `Error updating file ${file.name}`
-                            }
-                        };
+            } catch (error) {
+                console.log('Error updating product ', err);
 
-                        res.end(JSON.stringify(response));
+                res.statusCode = 500;
 
-                        return;
+                const response = {
+                    error: {
+                        message: `Error updating product ${product.name}`
                     }
+                };
 
-                    res.statusCode = 200;
+                res.end(JSON.stringify(response));
 
-                    const response = {
-                        message: `File ${file.name} was updated successfully`
-                    };
-
-                    res.end(JSON.stringify(response));
-
-                    return;
-                });
-            });
-            return;
+                //return;
+            }
         });
 
         req.on('error', (err) => {
@@ -183,99 +163,100 @@ export default function routes(req, res, data) {
 
             res.end(JSON.stringify(response));
 
-            return;
+            //return;
         });
         return;
-    };
+    }
 
-    if (req.method === 'DELETE' && req.url === '/files') {
-        const body = [];
+    if (req.method === 'DELETE' && req.url.split('/')[1] === 'products' && !isNaN(req.url.split('/')[2])) {
+        const id = req.url.split('/')[2];
 
-        req.on('data', (chunk) => {
-            body.push(chunk);
-        });
+        try {
+            const found = await deleteProduct(id);
 
-        req.on('end', () => {
-            const file = JSON.parse(body);
+            res.statusCode = 204;
 
-            res.statusCode = 400;
-
-            if (!file?.name) {
-                const response = {
-                    error: {
-                        message: `No name found, please provide the name for delete.`,
-                    }
-                };
-                res.end(JSON.stringify(response));
-
-                return;
+            if(!found) {
+                res.statusCode = 404;
             }
 
-            fs.access(`${file.name}.txt`, fs.constants.W_OK, (err) => {
-                if (err) {
-                    console.log('Error accessing file ', err);
+            res.end();
 
-                    res.statusCode = err.code === 'ENOENT' ? 404 : 403;
-
-                    const response = {
-                        error: {
-                            message: `Error accessing file ${file.name}`
-                        }
-                    };
-
-                    res.end(JSON.stringify(response));
-
-                    return;
-                }
-
-                fs.rm(`${file.name}.txt`, (err) => {
-                    if (err) {
-                        console.log('Error deleting file ', err);
-
-                        res.statusCode = 500;
-
-                        const response = {
-                            error: {
-                                message: `Error deleting file ${file.name}`
-                            }
-                        };
-
-                        res.end(JSON.stringify(response));
-
-                        return;
-                    }
-
-                    res.statusCode = 200;
-
-                    const response = {
-                        message: `File ${file.name} was deleted successfully`
-                    };
-
-                    res.end(JSON.stringify(response));
-
-                    return;
-                });
-            });
             return;
-        });
+        } catch (error) {
+            console.log('Error deleting product ', error);
 
-        req.on('error', (err) => {
-            console.log('Error processing request', err);
-
-            res.statusCode = 400;
+            res.statusCode = 500;
 
             const response = {
                 error: {
-                    message: 'Error processing request'
+                    message: `Error deleting product ${id}`
                 }
             };
 
             res.end(JSON.stringify(response));
 
             return;
-        });
-        return;
-    };
+        }
+    }
+
+    if (req.method === 'GET' && req.url.split('/')[1] === 'products' && !isNaN(req.url.split('/')[2])) {
+        const id = req.url.split('/')[2];
+
+        try {
+            const response = await findProductById(id);
+
+            res.statusCode = 200;
+
+            if(!response) {
+                res.statusCode = 404;
+            }
+
+            res.end(JSON.stringify(response));
+
+            return;
+        } catch (error) {
+            console.log('Error finding product ', error);
+
+            res.statusCode = 500;
+
+            const response = {
+                error: {
+                    message: `Error finding product ${id}`
+                }
+            };
+
+            res.end(JSON.stringify(response));
+
+            return;
+        }
+    }
+
+    if (req.method === 'GET' && req.url === '/products') {
+        try {
+            const response = await findAllProducts();
+
+            res.statusCode = 200;
+
+            res.end(JSON.stringify(response));
+
+            return;
+        } catch (error) {
+            console.log('Error finding products ', error);
+
+            res.statusCode = 500;
+
+            const response = {
+                error: {
+                    message: `Error finding products`
+                }
+            };
+
+            res.end(JSON.stringify(response));
+
+            return;
+        }
+    }
 
     res.statusCode = 404;
 
